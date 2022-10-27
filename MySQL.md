@@ -242,3 +242,128 @@ low_limit_id
 即 RR 级别下，快照读生成 Read View 时，Read View 会记录此时所有其他活动事务的快照，这些事务的修改对于当前事务都是不可见的。而早于Read View创建的事务所做的修改均是可见
 而在 RC 级别下的，事务中，每次快照读都会新生成一个快照和 Read View , 这就是我们在 RC 级别下的事务中可以看到别的事务提交的更新的原因
 总之在 RC 隔离级别下，是每个快照读都会生成并获取最新的 Read View；而在 RR 隔离级别下，则是同一个事务中的第一个快照读才会创建 Read View, 之后的快照读获取的都是同一个 Read View。
+
+
+
+### **Mysql事务隔离级别**
+
+1.读未提交（Read Uncommited）事务1修改的数据被事务2给回滚了
+
+2.读已提交（Read Commited）事务1读到其他事务修改但是没有提交的信息
+
+3.可重复读（Repeatable Read）在事务1进行多次的查询操作的时候，查询的结果不一致的
+
+4.可串行化（Serializable）在同一事务中查询的时候发现多了很多条记录
+
+
+
+### MySQL事务测试
+
+
+
+#### 读未提交，出现脏读
+
+global要新的连接生效 session立即当前连接生效
+
+```mysql
+--设置隔离级别为读未提交
+set session transaction isolation level read uncommitted;
+
+start transaction;
+
+select * from book;
+update book set name='小红书' where id = 1;
+select * from book; -- 可以查询到name更新为小红书，rollback后恢复原来的值
+
+commit;
+ROLLBACK;
+```
+
+![](D:\Code\myNote\MySQL.assets\image-20221025193127573.png)
+
+事务B也可以查询的更新值，造成脏读
+
+
+
+#### 升级为读已提交，解决脏读，出现不可重复读
+
+```mysql
+--读已提交
+
+set session transaction isolation level read committed;
+
+start transaction;
+
+select * from book;
+update book set name='小红书' where id = 1;
+select * from book;
+```
+
+![image-20221025193806338](D:\Code\myNote\MySQL.assets\image-20221025193806338.png)
+
+
+
+![image-20221025193751292](D:\Code\myNote\MySQL.assets\image-20221025193751292.png)
+
+
+
+![image-20221025193723918](D:\Code\myNote\MySQL.assets\image-20221025193723918.png)
+
+读已提交事务B无法读到事务A修改的值
+
+````mysql
+-- A提交后
+commit
+````
+
+事务B可以读到更新的内容，发现同一个事务中多次读取数据出现不一致的情况，出现不可重复读
+
+![image-20221025194145188](D:\Code\myNote\MySQL.assets\image-20221025194145188.png)
+
+
+
+#### 升级为可重复读，解决不可重复读
+
+```mysql
+set session transaction isolation level repeatable read;
+start transaction;
+select * from book;
+update book set name='小红书3' where id = 1;
+select * from book;
+commit
+```
+
+
+
+![image-20221025194944835](D:\Code\myNote\MySQL.assets\image-20221025194944835.png)
+
+
+
+![image-20221025194930979](D:\Code\myNote\MySQL.assets\image-20221025194930979.png)
+
+事务B读不到更新的值，可以重复读，但是可能业务上会出错，因为真正的值已经更新了
+
+```mysql
+start transaction;
+select * from book;
+insert into book VALUES(10,'一肚子气',100);
+select * from book;
+commit
+```
+
+事务A提交前，A可以读到新数据，B读不到，
+
+A提交后，B也读不到新数据，同时不允许插入与A查询相同的数据
+
+```mysql
+insert into book VALUES(10,'一肚子气',100);
+```
+
+使用当前读可以读出真实数据，普通select是快照读
+
+共享锁和排他锁都可以读出正常数据，但是加锁导致其他事务插入会堵塞等待，退化成串行化
+
+![image-20221025200332149](D:\Code\myNote\MySQL.assets\image-20221025200332149.png)
+
+![image-20221025200506414](D:\Code\myNote\MySQL.assets\image-20221025200506414.png)
+
